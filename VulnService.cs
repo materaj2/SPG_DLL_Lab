@@ -1,4 +1,3 @@
-// File: VulnService.cs
 using System;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
@@ -11,26 +10,14 @@ public class VulnService : ServiceBase
 
     private Thread worker;
 
-    public VulnService()
-    {
-        this.ServiceName = "LabService";
-    }
+    public VulnService() { this.ServiceName = "LabService"; }
 
     protected override void OnStart(string[] args)
     {
-        // Run work on separate thread to avoid blocking SCM
         worker = new Thread(() =>
         {
-            try
-            {
-                // intentionally load DLL without full path (vulnerable)
-                LoadLibrary("HijackMe.dll");
-            }
-            catch (Exception ex)
-            {
-                // optional: write to EventLog
-                try { EventLog.WriteEntry("VulnService failed: " + ex.Message, EventLogEntryType.Error); } catch {}
-            }
+            try { LoadLibrary("HijackMe.dll"); }
+            catch (Exception ex) { try { EventLog.WriteEntry("VulnService: " + ex.Message, EventLogEntryType.Error); } catch {} }
         });
         worker.IsBackground = true;
         worker.Start();
@@ -38,18 +25,8 @@ public class VulnService : ServiceBase
 
     protected override void OnStop()
     {
-        try
-        {
-            if (worker != null && worker.IsAlive)
-            {
-                worker.Abort(); // simple lab approach (not recommended for prod)
-            }
-        }
-        catch { }
+        try { if (worker != null && worker.IsAlive) worker.Abort(); } catch {}
     }
 
-    public static void Main()
-    {
-        ServiceBase.Run(new VulnService());
-    }
+    public static void Main() { ServiceBase.Run(new VulnService()); }
 }
