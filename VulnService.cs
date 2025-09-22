@@ -1,8 +1,9 @@
-// File: VulnService.cs
+// VulnService.cs
 using System;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Threading;
+using System.Diagnostics; // <- สำคัญ
 
 public class VulnService : ServiceBase
 {
@@ -10,33 +11,34 @@ public class VulnService : ServiceBase
     static extern IntPtr LoadLibrary(string lpFileName);
 
     private Thread worker;
+    private volatile bool _stopRequested = false;
 
     public VulnService()
     {
         this.ServiceName = "LabService";
         this.CanStop = true;
-        this.CanPauseAndContinue = false;
         this.AutoLog = true;
     }
 
     protected override void OnStart(string[] args)
     {
+        _stopRequested = false;
         worker = new Thread(() =>
         {
             try
             {
-                // intentionally load DLL without full path (vulnerable to DLL hijack)
+                // intentionally load DLL without full path (vulnerable)
                 LoadLibrary("HijackMe.dll");
-                // keep thread alive for demo; real work could be here
-                while (true)
+
+                // keep running so service doesn't exit (demo)
+                while (!_stopRequested)
                 {
                     Thread.Sleep(10000);
                 }
             }
-            catch (ThreadAbortException) { /* stopping */ }
             catch (Exception ex)
             {
-                try { EventLog.WriteEntry(this.ServiceName, "OnStart exception: " + ex.Message, EventLogEntryType.Error); } catch {}
+                try { EventLog.WriteEntry(this.ServiceName, "OnStart exception: " + ex.ToString(), EventLogEntryType.Error); } catch { }
             }
         });
         worker.IsBackground = true;
@@ -45,35 +47,23 @@ public class VulnService : ServiceBase
 
     protected override void OnStop()
     {
-        try
+        _stopRequested = true;
+        if (worker != null && worker.IsAlive)
         {
-            if (worker != null && worker.IsAlive)
-            {
-                worker.Abort();
-                worker.Join(2000);
-            }
+            worker.Join(3000);
         }
-        catch { }
     }
 
-    // Entry point for service and console/debug mode
     public static void Main(string[] args)
     {
         bool runAsConsole = false;
         foreach (var a in args)
-        {
-            if (string.Equals(a, "-console", StringComparison.OrdinalIgnoreCase))
-            {
-                runAsConsole = true;
-                break;
-            }
-        }
+            if (string.Equals(a, "-console", StringComparison.OrdinalIgnoreCase)) runAsConsole = true;
 
         if (Environment.UserInteractive || runAsConsole)
         {
-            // Run as console for debugging
             Console.WriteLine("Starting VulnService in console mode...");
-            VulnService svc = new VulnService();
+            var svc = new VulnService();
             svc.OnStart(args);
             Console.WriteLine("Press Enter to stop...");
             Console.ReadLine();
@@ -81,7 +71,6 @@ public class VulnService : ServiceBase
         }
         else
         {
-            // Run as Windows Service
             ServiceBase.Run(new VulnService());
         }
     }
